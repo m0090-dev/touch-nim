@@ -1,0 +1,272 @@
+import times, os, strutils
+when defined(windows):
+  import winim/lean       # 基本 Windows API
+  import winim/mean       # Shell, OLE など追加機能
+  import winim/com        # COM オブジェクト
+  import winim/utils      # ユーティリティ関数
+else:
+  import posix
+
+# 日時文字列を Time に変換する関数
+proc parseDateTime(dateStr: string): Time =
+  try:
+    result = dateStr.parse("yyyy-MM-dd HH:mm").toTime
+  except CatchableError as e:
+    echo "日時文字列の解析に失敗: ", e.msg
+    raise
+
+# ファイルの時刻を変更する関数
+proc changeFileTime(filePath: string, datetimeStr: string) =
+  let t = parseDateTime(datetimeStr)
+  
+  when defined(windows):
+    # Time -> FILETIME に変換するヘルパー
+    proc timeToFileTime(t: Time): FILETIME =
+      var ft: FILETIME
+      let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
+      ft.dwLowDateTime = ll.int32
+      ft.dwHighDateTime = (ll shr 32).int32
+      return ft
+
+    let ft = timeToFileTime(t)
+
+    # ファイルをハンドルとして開く
+    let h = CreateFileW(
+      filePath,
+      GENERIC_WRITE or GENERIC_READ,
+      FILE_SHARE_READ or FILE_SHARE_WRITE,
+      nil,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      nil
+    )
+    if h == INVALID_HANDLE_VALUE:
+      raise newException(OSError, "Failed to open file: " & filePath)
+
+    # FILETIME をポインタで渡す
+    if SetFileTime(h, addr ft, addr ft, addr ft) == 0:
+      raise newException(OSError, "Failed to set file time")
+
+    # ハンドルを閉じる
+    CloseHandle(h)
+
+  else:
+    # POSIX 系(Linux/macOS)
+    var tv: array[2, timespec]
+    tv[0] = timespec(sec = t.toUnix(), nsec = 0)
+    tv[1] = timespec(sec = t.toUnix(), nsec = 0)
+    if utimensat(0, filePath.cstring, tv.addr, 0) != 0:
+      raise newException(OSError, "utimensat failed for file: " & filePath)
+
+
+# ファイルのアクセス時刻を現在時刻に変更する関数
+proc updateAccessTime(path: string) =
+  try:
+    let nowTime = now()
+    
+    when defined(windows):
+      # 現在の修正時刻を取得
+      let info = getFileInfo(path)
+      let mtime = info.lastWriteTime
+
+      # Time -> FILETIME に変換するヘルパー
+      proc timeToFileTime(t: Time): FILETIME =
+        var ft: FILETIME
+        let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
+        ft.dwLowDateTime = ll.int32
+        ft.dwHighDateTime = (ll shr 32).int32
+        return ft
+
+      let ftAccess = timeToFileTime(nowTime.toTime())
+      let ftModify = timeToFileTime(mtime)
+
+      # ファイルをハンドルとして開く
+      let h = CreateFileW(
+        path,
+        GENERIC_WRITE or GENERIC_READ,
+        FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nil
+      )
+      if h == INVALID_HANDLE_VALUE:
+        raise newException(OSError, "Failed to open file: " & path)
+
+      # アクセス時刻のみ更新
+      if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+        raise newException(OSError, "Failed to set access time: " & path)
+
+      CloseHandle(h)
+
+    else:
+      # POSIX 系(Linux/macOS)
+      var tv: array[2, timespec]
+      let unixNow = nowTime.toUnix()
+      let unixMtime = getFileInfo(path).mtime.toUnix()
+      tv[0] = timespec(sec = unixNow, nsec = 0)   # atime
+      tv[1] = timespec(sec = unixMtime, nsec = 0) # mtime
+      if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        raise newException(OSError, "utimensat failed for file: " & path)
+
+  except OSError as e:
+    echo "アクセス時刻の更新に失敗: ", path, " -> ", e.msg
+
+# ファイルの修正時刻を現在時刻に変更
+proc updateModificationTime(path: string) =
+  try:
+    let nowTime = now()
+
+    when defined(windows):
+      let info = getFileInfo(path)
+      let atime = info.lastAccessTime
+      let mtime = nowTime
+
+      # Time -> FILETIME に変換
+      proc timeToFileTime(t: Time): FILETIME =
+        var ft: FILETIME
+        let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
+        ft.dwLowDateTime = ll.int32
+        ft.dwHighDateTime = (ll shr 32).int32
+        return ft
+
+      let ftAccess = timeToFileTime(atime)
+      let ftModify = timeToFileTime(mtime.toTime())
+
+      # ファイルをハンドルとして開く
+      let h = CreateFileW(
+        path,
+        GENERIC_WRITE or GENERIC_READ,
+        FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nil
+      )
+      if h == INVALID_HANDLE_VALUE:
+        raise newException(OSError, "Failed to open file: " & path)
+
+      if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+        raise newException(OSError, "Failed to set modification time: " & path)
+
+      CloseHandle(h)
+
+    else:
+      # POSIX 系
+      let info = getFileInfo(path)
+      let atimeUnix = info.lastAccessTime.toUnix()
+      let mtimeUnix = nowTime.toUnix()
+      var tv: array[2, timespec]
+      tv[0] = timespec(sec = atimeUnix, nsec = 0)   # atime
+      tv[1] = timespec(sec = mtimeUnix, nsec = 0)   # mtime
+      if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        raise newException(OSError, "utimensat failed for file: " & path)
+
+  except OSError as e:
+    echo "修正時刻の更新に失敗: ", path, " -> ", e.msg
+
+
+# ファイルの時刻を参照ファイルの時刻に変更
+proc updateTimeFromReference(path, reference: string) =
+  try:
+    let refInfo = getFileInfo(reference)
+    let atime = refInfo.lastAccessTime
+    let mtime = refInfo.lastWriteTime
+
+    when defined(windows):
+      # Time -> FILETIME に変換
+      proc timeToFileTime(t: Time): FILETIME =
+        var ft: FILETIME
+        let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
+        ft.dwLowDateTime = ll.int32
+        ft.dwHighDateTime = (ll shr 32).int32
+        return ft
+
+      let ftAccess = timeToFileTime(atime)
+      let ftModify = timeToFileTime(mtime)
+
+      # ファイルをハンドルとして開く
+      let h = CreateFileW(
+        path,
+        GENERIC_WRITE or GENERIC_READ,
+        FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nil
+      )
+      if h == INVALID_HANDLE_VALUE:
+        raise newException(OSError, "Failed to open file: " & path)
+
+      if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+        raise newException(OSError, "Failed to set file time from reference: " & path)
+
+      CloseHandle(h)
+
+    else:
+      # POSIX 系
+      var tv: array[2, timespec]
+      tv[0] = timespec(sec = atime.toUnix(), nsec = 0)   # atime
+      tv[1] = timespec(sec = mtime.toUnix(), nsec = 0)   # mtime
+      if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        raise newException(OSError, "utimensat failed for file: " & path)
+
+  except OSError as e:
+    echo "参照ファイルからの時刻更新に失敗: ", path, " -> ", e.msg
+
+
+# YYYYMMDDHHMM.SS 形式の文字列を Time に変換する関数
+proc parseTimestamp(timestampStr: string): Time =
+  try:
+    if timestampStr.len != 15 or timestampStr[12] != '.':
+      raise newException(ValueError, "形式が不正です: " & timestampStr)
+    let datePart = timestampStr[0..11]       # YYYYMMDDHHMM
+    let secPart = parseInt(timestampStr[13..14])
+    result = datePart.parse("yyyyMMddHHMM").toTime + initDuration(secPart, 0, 0, 0)
+  except CatchableError as e:
+    echo "タイムスタンプ文字列の解析に失敗: ", timestampStr, " -> ", e.msg
+    raise
+
+# ファイルの時刻を指定タイムスタンプに変更する関数
+proc updateTimestamp(path: string, timestampStr: string) =
+  try:
+    let t = parseTimestamp(timestampStr)
+
+    when defined(windows):
+      # Time -> FILETIME に変換
+      proc timeToFileTime(t: Time): FILETIME =
+        var ft: FILETIME
+        let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
+        ft.dwLowDateTime = ll.int32
+        ft.dwHighDateTime = (ll shr 32).int32
+        return ft
+
+      let ft = timeToFileTime(t)
+      let h = CreateFileW(
+        path,
+        GENERIC_WRITE or GENERIC_READ,
+        FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nil
+      )
+      if h == INVALID_HANDLE_VALUE:
+        raise newException(OSError, "Failed to open file: " & path)
+      if SetFileTime(h, addr ft, addr ft, addr ft) == 0:
+        raise newException(OSError, "Failed to set file time: " & path)
+      CloseHandle(h)
+
+    else:
+      # POSIX 系
+      var tv: array[2, timespec]
+      let unixTime = t.toUnix()
+      tv[0] = timespec(sec = unixTime, nsec = 0) # atime
+      tv[1] = timespec(sec = unixTime, nsec = 0) # mtime
+      if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        raise newException(OSError, "utimensat failed for file: " & path)
+
+  except OSError as e:
+    echo "タイムスタンプ更新に失敗: ", path, " -> ", e.msg
+  except ValueError as e:
+    echo "タイムスタンプ文字列の解析に失敗: ", timestampStr, " -> ", e.msg

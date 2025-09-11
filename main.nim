@@ -1,7 +1,7 @@
 import docopt
 import options
 import touch_doc
-#import touch
+import touch
 type 
   TouchConfig = object
     access:bool = false
