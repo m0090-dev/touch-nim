@@ -1,7 +1,8 @@
 
 import times, os, strutils
 when defined(windows):
-  import winim/lean, winim/mean, winim/com, winim/utils
+  #import winim/lean, winim/mean, winim/com, winim/utils
+  import winlean
 else:
   import posix
 
@@ -29,7 +30,7 @@ proc parseTimestamp(timestampStr: string): Time =
   except CatchableError as e:
     raise newException(ValueError, "タイムスタンプ文字列の解析に失敗: " & timestampStr & " -> " & e.msg)
 
-proc updateFileTime(path: string;
+proc updateFileTime*(path: string;
                      mode: FileTimeUpdateMode;
                      dateStr: string = "";
                      timestampStr: string = "";
@@ -60,19 +61,40 @@ proc updateFileTime(path: string;
       proc timeToFileTime(t: Time): FILETIME =
         var ft: FILETIME
         let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
-        ft.dwLowDateTime = ll.int32
-        ft.dwHighDateTime = (ll shr 32).int32
+        ft.dwLowDateTime  = int32(ll and 0xFFFFFFFF'i64)
+        ft.dwHighDateTime = int32((ll shr 32) and 0xFFFFFFFF'i64)
         return ft
       let ftAccess = timeToFileTime(atime)
       let ftModify = timeToFileTime(mtime)
-      let h = CreateFileW(path, GENERIC_WRITE or GENERIC_READ,
-                          FILE_SHARE_READ or FILE_SHARE_WRITE,
-                          nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nil)
+      
+
+      #let h = createFileW(path, GENERIC_WRITE or GENERIC_READ,
+                          #FILE_SHARE_READ or FILE_SHARE_WRITE,
+                          #nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nil)
+      
+      
+
+
+      let widePath: WideCString =toWideCString(newWideCString(path))  # string -> WideCString
+
+      let h = createFileW(
+        widePath,
+        GENERIC_WRITE or GENERIC_READ,   # DWORD
+        FILE_SHARE_READ or FILE_SHARE_WRITE,  # DWORD
+        nil,                             # lpSecurityAttributes
+        OPEN_EXISTING,                   # DWORD
+        FILE_ATTRIBUTE_NORMAL,           # DWORD
+        cast[Handle](nil)                              # hTemplateFile
+      )
+
+
+
+
       if h == INVALID_HANDLE_VALUE:
         raise newException(OSError, "Failed to open file: " & path)
-      if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+      if setFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
         raise newException(OSError, "Failed to set file time: " & path)
-      CloseHandle(h)
+      discard closeHandle(h)
     else:
       var tv: array[2, timespec]
       tv[0] = timespec(sec = atime.toUnix(), nsec = 0)
@@ -84,3 +106,15 @@ proc updateFileTime(path: string;
     echo "ファイル時刻の更新に失敗: ", path, " -> ", e.msg
   except ValueError as e:
     echo "入力文字列の解析に失敗 -> ", e.msg
+
+proc touch*(path: string;
+           mode: FileTimeUpdateMode = AccessTimeOnly;
+           dateStr: string = "";
+           timestampStr: string = "";
+           refPath: string = "") =
+  # ファイルが存在しなければ新規作成
+  if not fileExists(path):
+    discard open(path, fmWrite)  # 空ファイル作成
+
+  # 既存ファイルの時刻更新
+  updateFileTime(path, mode, dateStr, timestampStr, refPath)
