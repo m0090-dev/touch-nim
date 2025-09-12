@@ -1,8 +1,11 @@
-__pycache__/*
-__pycache__/*.pyc
+# Python キャッシュ
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# ビルド成果物
 build/*
 
+# 空ディレクトリ保持用
 !build/.gitkeep
