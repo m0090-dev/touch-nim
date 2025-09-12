@@ -28,12 +28,14 @@ def main():
         builder.build(mode=mode, source=source)
         build_file = Path(builder.DEFAULT_DEST_DIR) / source.replace(".nim", "")
     else:
-        builder.build(mode=mode)
-        build_file = Path(builder.DEFAULT_DEST_DIR) / builder.DEFAULT_BUILD_FILE
-
-    # デフォルト設定でビルド
-    builder.build()
-
+        if mode:
+          builder.build(mode=mode)
+        else: 
+          builder.build()
+        build_file = Path(builder.DEFAULT_DEST_DIR) / builder.DEFAULT_BUILD_FILE.replace(".nim","")
+    #print("mode=",mode)
+    #print("source=",source)
+    #print("build_file=" , build_file)
     # 実行 (extra_args を追加して渡す)
     subprocess.run([str(build_file), *extra_args])
 

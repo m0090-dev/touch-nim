@@ -123,22 +123,15 @@
 
   #discard CloseHandle(h)
   #echo "===== end debug ====="
-
-import cligen
-import options
-import utils
-import os
-
-
-proc climain(  
-  access:bool = false,
-  modify:bool = false,
-  no_create:bool = false,
-  date:string = "",
-  timestamp:string = "",
-  reference:string = "",
-  file:seq[string]
-) = 
+#proc climain(  
+  #access:bool = false,
+  #modify:bool = false,
+  #no_create:bool = false,
+  #date:string = "",
+  #timestamp:string = "",
+  #reference:string = "",
+  #file:seq[string]
+#) = 
   #writeFile("test.txt", "hello")  # 確実に存在するファイルを用意
   #let t = "2024-05-01 12:34:56".parse("yyyy-MM-dd HH:mm:ss").toTime()
   #debugSetAndReadFileTime("test.txt", t)
@@ -149,22 +142,92 @@ proc climain(
   #echo cfg # TODO: debug only
   #touch("test.txt",mode=FromTimestampString,timestampStr="202509112000")  
   #quit()
-  echo "timestamp=",timestamp
-  for f in file:
-    var mode: FileTimeUpdateMode = AccessTimeOnly
-    if access and not modify:
-      mode = AccessTimeOnly
-    elif modify and not access:
-      mode = ModificationTimeOnly
-    elif reference != "":
-      mode = FromReference
-    elif date != "":
-      mode = FromDateTimeString
-    elif timestamp != "":
-      mode = FromTimestampString
-    else:
+  #echo "timestamp=",timestamp
+  #for f in file:
+    #var mode: FileTimeUpdateMode = AccessTimeOnly
+    #if access and not modify:
+      #mode = AccessTimeOnly
+    #elif modify and not access:
+      #mode = ModificationTimeOnly
+    #elif reference != "":
+      #mode = FromReference
+    #elif date != "":
+      #mode = FromDateTimeString
+    #elif timestamp != "":
+      #mode = FromTimestampString
+    #else:
       # デフォルトは両方更新
-      mode = AccessTimeOnly
+      #mode = AccessTimeOnly
+
+    # ファイル存在チェック
+    #if not fileExists(f):
+      #if no_create:
+        #echo "スキップ: ファイルが存在しません -> ", f
+        #continue
+      #else:
+        #discard open(f, fmWrite)  # 空ファイル作成
+
+    # touch 実行
+    #try:
+      #case mode
+      #of AccessTimeOnly, ModificationTimeOnly:
+        #touch(f, mode)
+      #of FromReference:
+        #touch(f, mode, refPath = reference)
+      #of FromDateTimeString:
+        #touch(f, mode, dateStr = date)
+      #of FromTimestampString:
+        #touch(f, mode, timestampStr = timestamp)
+    #except OSError as e:
+      #echo "ファイル更新失敗: ", f, " -> ", e.msg
+
+
+
+import cligen
+import options
+import utils
+import os
+import version
+
+
+proc climain(
+  access: bool = false,
+  modify: bool = false,
+  no_create: bool = false,
+  date: string = "",
+  timestamp: string = "",
+  reference: string = "",
+  file: seq[string]
+) =
+  when defined(release): discard
+  else:
+    echo "== DEBUG TEXT =="
+    echo "access=",access
+    echo "modify=",modify
+    echo "no_create=",no_create
+    echo "date=",date
+    echo "timestamp=",timestamp
+    echo "reference=",reference
+    echo "file=",file
+    echo "== END TEXT =="
+  for f in file:
+    var mode: FileTimeUpdateMode = {}
+
+    # フラグ設定
+    if access: mode.incl(AccessTime)
+    if modify: mode.incl(ModifyTime)
+    if reference != "": mode.incl(UseReference)
+    if date != "": mode.incl(UseDateStr)
+    if timestamp != "": mode.incl(UseTimestamp)
+
+    # -t がある場合、-a/-m が指定されなければ両方更新
+    if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
+      mode.incl(AccessTime)
+      mode.incl(ModifyTime)
+
+    # それ以外のデフォルト（何も指定されていない場合）
+    if mode == {}:
+      mode = {AccessTime, ModifyTime}
 
     # ファイル存在チェック
     if not fileExists(f):
@@ -176,19 +239,10 @@ proc climain(
 
     # touch 実行
     try:
-      case mode
-      of AccessTimeOnly, ModificationTimeOnly:
-        touch(f, mode)
-      of FromReference:
-        touch(f, mode, refPath = reference)
-      of FromDateTimeString:
-        touch(f, mode, dateStr = date)
-      of FromTimestampString:
-        touch(f, mode, timestampStr = timestamp)
+      touch(f, mode, dateStr = date, timestampStr = timestamp, refPath = reference)
     except OSError as e:
       echo "ファイル更新失敗: ", f, " -> ", e.msg
 
-
-
 if isMainModule:
+  clCfg.version = VERSION
   dispatch climain

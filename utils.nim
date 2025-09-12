@@ -1,3 +1,250 @@
+#type
+  #FileTimeUpdateMode* = enum
+    #AccessTimeOnly,          # アクセス時刻だけ更新
+    #ModificationTimeOnly,    # 修正時刻だけ更新
+    #FromReference,           # 参照ファイルに合わせる
+    #FromDateTimeString,      # 任意日時文字列に設定
+    #FromTimestampString      # YYYYMMDDHHMM.SS形式のタイムスタンプ
+
+
+#proc updateFileTime*(path: string;
+                     #mode: FileTimeUpdateMode;
+                     #dateStr: string = "";
+                     #timestampStr: string = "";
+                     #refPath: string = "") =
+  #try:
+    #var atime, mtime: Time
+    #case mode
+    #of AccessTimeOnly:
+      #atime = now().toTime()
+      #mtime = getFileInfo(path).lastWriteTime
+    #of ModificationTimeOnly:
+      #atime = getFileInfo(path).lastAccessTime
+      #mtime = now().toTime()
+    #of FromReference:
+      #let refInfo = getFileInfo(refPath)
+      #atime = refInfo.lastAccessTime
+      #mtime = refInfo.lastWriteTime
+    #of FromDateTimeString:
+      #let t = parseDateTime(dateStr)
+      #atime = t
+      #mtime = t
+    #of FromTimestampString:
+      #let t = parseTimestamp(timestampStr)
+      #atime = t
+      #mtime = t
+
+    #when defined(windows):
+      #let ftAccess = timeToFileTimeUTC(atime)
+      #let ftModify = timeToFileTimeUTC(mtime)
+      
+
+      #let h = CreateFileW(path, GENERIC_WRITE or GENERIC_READ,
+                          #FILE_SHARE_READ or FILE_SHARE_WRITE,
+                          #nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nil)
+      
+      
+
+
+      #let widePath: WideCString =toWideCString(newWideCString(path))  # string -> WideCString
+
+      #let h = CreateFileW(
+        #path,
+        #GENERIC_WRITE or GENERIC_READ,   # DWORD
+        #FILE_SHARE_READ or FILE_SHARE_WRITE,  # DWORD
+        #nil,                             # lpSecurityAttributes
+        #OPEN_EXISTING,                   # DWORD
+        #FILE_ATTRIBUTE_NORMAL,           # DWORD
+        #nil                              # hTemplateFile
+      #)
+
+
+      #let ft = timeToFileTimeUTC(mtime)
+
+      #if h == INVALID_HANDLE_VALUE:
+        #raise newException(OSError, "Failed to open file: " & path)
+      #if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+      #if SetFileTime(h, nil, addr ft, addr ft) == 0:
+      #if SetFileTime(h, nil, addr ftAccess, addr ftModify) == 0:
+        #raise newException(OSError, "Failed to set file time: " & path)
+        #echo "SetFileTime failed, GetLastError=", GetLastError()
+        #discard CloseHandle(h)
+        #return
+      #discard CloseHandle(h)
+    #else:
+      #var tv: array[2, timespec]
+      #tv[0] = timespec(sec = atime.toUnix(), nsec = 0)
+      #tv[1] = timespec(sec = mtime.toUnix(), nsec = 0)
+      #if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        #raise newException(OSError, "utimensat failed for file: " & path)
+
+  #except OSError as e:
+    #echo "ファイル時刻の更新に失敗: ", path, " -> ", e.msg
+  #except ValueError as e:
+    #echo "入力文字列の解析に失敗 -> ", e.msg
+
+#proc updateFileTime*(path: string;
+                     #mode: FileTimeUpdateMode;
+                     #dateStr: string = "";
+                     #timestampStr: string = "";
+                     #refPath: string = "") =
+  #try:
+    #var atime, mtime: Time
+    #let info = getFileInfo(path)
+
+    # --- デフォルト値は元の時刻 ---
+    #atime = info.lastAccessTime
+    #mtime = info.lastWriteTime
+
+    # --- 参照ファイル指定 ---
+    #if UseReference in mode:
+      #let refInfo = getFileInfo(refPath)
+      #atime = refInfo.lastAccessTime
+      #mtime = refInfo.lastWriteTime
+
+    # --- 日付文字列指定 ---
+    #if UseDateStr in mode:
+      #let t = parseDateTime(dateStr)
+      #atime = t
+      #mtime = t
+
+    # --- タイムスタンプ指定 ---
+    #if UseTimestamp in mode:
+      #let t = parseTimestamp(timestampStr)
+      #atime = t
+      #mtime = t
+
+    # --- Access/Modify フラグで上書き対象を決定 ---
+    #if AccessTime notin mode:
+      #atime = info.lastAccessTime
+    #if ModifyTime notin mode:
+      #mtime = info.lastWriteTime
+
+    #when defined(windows):
+      #let ftAccess = timeToFileTimeUTC(atime)
+      #let ftModify = timeToFileTimeUTC(mtime)
+
+      #let h = CreateFileW(
+        #path,
+        #GENERIC_WRITE or GENERIC_READ,
+        #FILE_SHARE_READ or FILE_SHARE_WRITE,
+        #nil,
+        #OPEN_EXISTING,
+        #FILE_ATTRIBUTE_NORMAL,
+        #nil
+      #)
+
+      #if h == INVALID_HANDLE_VALUE:
+        #raise newException(OSError, "Failed to open file: " & path)
+
+      #if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+        #echo "SetFileTime failed, GetLastError=", GetLastError()
+        #discard CloseHandle(h)
+        #return
+      #discard CloseHandle(h)
+    #else:
+      #var tv: array[2, timespec]
+      #tv[0] = timespec(sec = atime.toUnix(), nsec = 0)
+      #tv[1] = timespec(sec = mtime.toUnix(), nsec = 0)
+      #if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        #raise newException(OSError, "utimensat failed for file: " & path)
+
+  #except OSError as e:
+    #echo "ファイル時刻の更新に失敗: ", path, " -> ", e.msg
+  #except ValueError as e:
+    #echo "入力文字列の解析に失敗 -> ", e.msg
+
+#proc updateFileTime*(path: string;
+                     #mode: FileTimeUpdateMode;
+                     #dateStr: string = "";
+                     #timestampStr: string = "";
+                     #refPath: string = "") =
+  #try:
+    #let info = getFileInfo(path)
+    #var atime = info.lastAccessTime
+    #var mtime = info.lastWriteTime
+
+    #var newTime: Time
+
+
+    # timestamp 指定でアクセス/修正フラグが空なら両方追加
+    #if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
+      #mode.incl(AccessTime)
+      #mode.incl(ModifyTime)
+    # 参照ファイル
+    #if UseReference in mode:
+      #let refInfo = getFileInfo(refPath)
+      #newTime = refInfo.lastWriteTime
+      #if AccessTime in mode: atime = refInfo.lastAccessTime
+      #if ModifyTime in mode: mtime = refInfo.lastWriteTime
+
+    # 日付文字列
+    #if UseDateStr in mode:
+      #let t = parseDateTime(dateStr)
+      #if AccessTime in mode: atime = t
+      #if ModifyTime in mode: mtime = t
+
+    # タイムスタンプ
+    #if UseTimestamp in mode:
+      #let t = parseTimestamp(timestampStr)
+      #if AccessTime in mode: atime = t
+      #if ModifyTime in mode: mtime = t
+
+    #when defined(windows):
+      #let ftAccess = timeToFileTimeUTC(atime)
+      #let ftModify = timeToFileTimeUTC(mtime)
+
+      #let h = CreateFileW(
+        #path,
+        #GENERIC_WRITE or GENERIC_READ,
+        #FILE_SHARE_READ or FILE_SHARE_WRITE,
+        #nil,
+        #OPEN_EXISTING,
+        #FILE_ATTRIBUTE_NORMAL,
+        #nil
+      #)
+
+      #if h == INVALID_HANDLE_VALUE:
+        #raise newException(OSError, "Failed to open file: " & path)
+
+     # if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+        #echo "SetFileTime failed, GetLastError=", GetLastError()
+        #discard CloseHandle(h)
+        #return
+      #discard CloseHandle(h)
+
+      # CreationTime は変更しないので nil
+      #if SetFileTime(h,
+        #if AccessTime in mode: addr ftAccess else: nil,
+        #nil,
+        #if ModifyTime in mode: addr ftModify else: nil) == 0:
+          #echo "SetFileTime failed, GetLastError=", GetLastError()
+          #discard CloseHandle(h)
+          #return
+
+    #else:
+      #var tv: array[2, timespec]
+      #tv[0] = timespec(sec = atime.toUnix(), nsec = 0)
+      #tv[1] = timespec(sec = mtime.toUnix(), nsec = 0)
+      #if utimensat(0, path.cstring, tv.addr, 0) != 0:
+        #raise newException(OSError, "utimensat failed for file: " & path)
+
+  #except OSError as e:
+    #echo "ファイル時刻の更新に失敗: ", path, " -> ", e.msg
+  #except ValueError as e:
+    #echo "入力文字列の解析に失敗 -> ", e.msg
+#proc touch*(path: string;
+           #mode: FileTimeUpdateMode = AccessTimeOnly;
+           #dateStr: string = "";
+           #timestampStr: string = "";
+           #refPath: string = "") =
+  # ファイルが存在しなければ新規作成
+  #if not fileExists(path):
+    #discard open(path, fmWrite)  # 空ファイル作成
+
+  # 既存ファイルの時刻更新
+  #updateFileTime(path, mode, dateStr, timestampStr, refPath)
+
 
 import times, os, strutils
 when defined(windows):
@@ -7,12 +254,9 @@ else:
   import posix
 
 type
-  FileTimeUpdateMode* = enum
-    AccessTimeOnly,          # アクセス時刻だけ更新
-    ModificationTimeOnly,    # 修正時刻だけ更新
-    FromReference,           # 参照ファイルに合わせる
-    FromDateTimeString,      # 任意日時文字列に設定
-    FromTimestampString      # YYYYMMDDHHMM.SS形式のタイムスタンプ
+  FileTimeFlag* = enum
+    AccessTime, ModifyTime, UseReference, UseDateStr, UseTimestamp
+  FileTimeUpdateMode* = set[FileTimeFlag]
 
 
 
@@ -53,69 +297,84 @@ proc timeToFileTimeUTC(t: Time): FILETIME =
   # let ut = utc(t)  # もう t は UTC なので不要
   let unix = int64(t.toUnix())
   result = unixToFileTime(unix)
+
+
+
 proc updateFileTime*(path: string;
                      mode: FileTimeUpdateMode;
                      dateStr: string = "";
                      timestampStr: string = "";
                      refPath: string = "") =
   try:
-    var atime, mtime: Time
-    case mode
-    of AccessTimeOnly:
-      atime = now().toTime()
-      mtime = getFileInfo(path).lastWriteTime
-    of ModificationTimeOnly:
-      atime = getFileInfo(path).lastAccessTime
-      mtime = now().toTime()
-    of FromReference:
+    let info = getFileInfo(path)
+    var atime = info.lastAccessTime
+    var mtime = info.lastWriteTime
+
+    var newTime: Time
+
+    # mode をローカルコピーにして mutable にする
+    var modeLocal = mode
+
+    # timestamp 指定でアクセス/修正フラグが空なら両方追加
+    if UseTimestamp in modeLocal and not (AccessTime in modeLocal or ModifyTime in modeLocal):
+      modeLocal = modeLocal + {AccessTime, ModifyTime}
+
+    # 参照ファイルモードでアクセス/修正が空なら両方追加
+    if UseReference in modeLocal and not (AccessTime in modeLocal or ModifyTime in modeLocal):
+      modeLocal = modeLocal + {AccessTime, ModifyTime}
+    if modeLocal == {}:
+      modeLocal = {AccessTime, ModifyTime}
+    # 参照ファイル
+    if UseReference in modeLocal:
       let refInfo = getFileInfo(refPath)
-      atime = refInfo.lastAccessTime
-      mtime = refInfo.lastWriteTime
-    of FromDateTimeString:
+      if AccessTime in modeLocal: atime = refInfo.lastAccessTime
+      if ModifyTime in modeLocal: mtime = refInfo.lastWriteTime
+
+    # 日付文字列
+    if UseDateStr in modeLocal:
       let t = parseDateTime(dateStr)
-      atime = t
-      mtime = t
-    of FromTimestampString:
+      if AccessTime in modeLocal: atime = t
+      if ModifyTime in modeLocal: mtime = t
+
+    # タイムスタンプ
+    if UseTimestamp in modeLocal:
       let t = parseTimestamp(timestampStr)
-      atime = t
-      mtime = t
+      if AccessTime in modeLocal: atime = t
+      if ModifyTime in modeLocal: mtime = t
+
+    # 7. 単体指定や何も指定されていない場合、modeLocal のフィールドを現在時刻に更新
+    let n = now().toTime()  # Time型
+    if AccessTime in modeLocal and not (UseDateStr in modeLocal or UseTimestamp in modeLocal or UseReference in modeLocal):
+      atime = n
+    if ModifyTime in modeLocal and not (UseDateStr in modeLocal or UseTimestamp in modeLocal or UseReference in modeLocal):
+      mtime = n
 
     when defined(windows):
       let ftAccess = timeToFileTimeUTC(atime)
       let ftModify = timeToFileTimeUTC(mtime)
-      
-
-      #let h = CreateFileW(path, GENERIC_WRITE or GENERIC_READ,
-                          #FILE_SHARE_READ or FILE_SHARE_WRITE,
-                          #nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nil)
-      
-      
-
-
-      #let widePath: WideCString =toWideCString(newWideCString(path))  # string -> WideCString
 
       let h = CreateFileW(
         path,
-        GENERIC_WRITE or GENERIC_READ,   # DWORD
-        FILE_SHARE_READ or FILE_SHARE_WRITE,  # DWORD
-        nil,                             # lpSecurityAttributes
-        OPEN_EXISTING,                   # DWORD
-        FILE_ATTRIBUTE_NORMAL,           # DWORD
-        nil                              # hTemplateFile
+        GENERIC_WRITE or GENERIC_READ,
+        FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nil
       )
-
-
-      let ft = timeToFileTimeUTC(mtime)
 
       if h == INVALID_HANDLE_VALUE:
         raise newException(OSError, "Failed to open file: " & path)
-      #if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
-      if SetFileTime(h, nil, addr ft, addr ft) == 0:
-      #if SetFileTime(h, nil, addr ftAccess, addr ftModify) == 0:
-        #raise newException(OSError, "Failed to set file time: " & path)
-        echo "SetFileTime failed, GetLastError=", GetLastError()
-        discard CloseHandle(h)
-        return
+
+      # CreationTime は変更しないので nil
+    
+      if SetFileTime(h,
+        nil,  # CreationTime は変更しない
+        if AccessTime in modeLocal: addr ftAccess else: nil,  # ここでアクセス時刻
+        if ModifyTime in modeLocal: addr ftModify else: nil) == 0:
+          echo "SetFileTime failed, GetLastError=", GetLastError()
+          discard CloseHandle(h)
+          return
       discard CloseHandle(h)
     else:
       var tv: array[2, timespec]
@@ -129,14 +388,18 @@ proc updateFileTime*(path: string;
   except ValueError as e:
     echo "入力文字列の解析に失敗 -> ", e.msg
 
+
+
+
 proc touch*(path: string;
-           mode: FileTimeUpdateMode = AccessTimeOnly;
+           mode: FileTimeUpdateMode = {AccessTime, ModifyTime};
            dateStr: string = "";
            timestampStr: string = "";
            refPath: string = "") =
-  # ファイルが存在しなければ新規作成
   if not fileExists(path):
     discard open(path, fmWrite)  # 空ファイル作成
 
-  # 既存ファイルの時刻更新
   updateFileTime(path, mode, dateStr, timestampStr, refPath)
+
+
+
