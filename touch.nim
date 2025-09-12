@@ -244,5 +244,9 @@ proc climain(
       echo "ファイル更新失敗: ", f, " -> ", e.msg
 
 if isMainModule:
+  if paramCount() < 1:
+    echo "touch: missing file operand" 
+    echo "Try 'touch --help' for more information."
+
   clCfg.version = VERSION
   dispatch climain
