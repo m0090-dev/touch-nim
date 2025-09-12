@@ -1,8 +1,8 @@
 
 import times, os, strutils
 when defined(windows):
-  #import winim/lean, winim/mean, winim/com, winim/utils
-  import winlean
+  import winim/lean, winim/mean, winim/com, winim/utils
+  #import winlean
 else:
   import posix
 
@@ -14,22 +14,45 @@ type
     FromDateTimeString,      # 任意日時文字列に設定
     FromTimestampString      # YYYYMMDDHHMM.SS形式のタイムスタンプ
 
+
+
+
 proc parseDateTime(dateStr: string): Time =
   try:
     result = dateStr.parse("yyyy-MM-dd HH:mm").toTime
   except CatchableError as e:
     raise newException(ValueError, "日時文字列の解析に失敗: " & e.msg)
 
-proc parseTimestamp(timestampStr: string): Time =
-  try:
-    if timestampStr.len != 15 or timestampStr[12] != '.':
-      raise newException(ValueError, "形式が不正です: " & timestampStr)
-    let datePart = timestampStr[0..11]
-    let secPart = parseInt(timestampStr[13..14])
-    result = datePart.parse("yyyyMMddHHMM").toTime + initDuration(secPart,0,0,0)
-  except CatchableError as e:
-    raise newException(ValueError, "タイムスタンプ文字列の解析に失敗: " & timestampStr & " -> " & e.msg)
 
+proc parseTimestamp(timestampStr: string): Time =
+  let ts = timestampStr.strip()
+  case ts.len
+  of 12: # YYYYMMDDHHMM
+    # 文字列を "YYYY-MM-DD HH:MM" 形式に変換して parseTime
+    let s = ts[0..3] & "-" & ts[4..5] & "-" & ts[6..7] & " " & ts[8..9] & ":" & ts[10..11]
+    result = parseTime(s, "yyyy-MM-dd HH:mm",local())
+  of 15: # YYYYMMDDHHMM.SS
+    if ts[12] != '.':
+      raise newException(ValueError, "形式が不正です: " & ts)
+    let s = ts[0..3] & "-" & ts[4..5] & "-" & ts[6..7] & " " &
+            ts[8..9] & ":" & ts[10..11] & ":" & ts[13..14]
+    result = parseTime(s, "yyyy-MM-dd HH:mm:ss",local())
+  else:
+    raise newException(ValueError, "形式が不正です: " & ts)
+
+
+# Unix(秒) -> FILETIME (UTC)
+proc unixToFileTime(unixSec: int64): FILETIME =
+  var ft: FILETIME
+  let ll = unixSec * 10_000_000'i64 + 116444736000000000'i64
+  ft.dwLowDateTime  = cast[int32](ll and 0xFFFFFFFF'i64)
+  ft.dwHighDateTime = cast[int32]((ll shr 32) and 0xFFFFFFFF'i64)
+  return ft
+# Time -> FILETIME
+proc timeToFileTimeUTC(t: Time): FILETIME =
+  # let ut = utc(t)  # もう t は UTC なので不要
+  let unix = int64(t.toUnix())
+  result = unixToFileTime(unix)
 proc updateFileTime*(path: string;
                      mode: FileTimeUpdateMode;
                      dateStr: string = "";
@@ -58,43 +81,42 @@ proc updateFileTime*(path: string;
       mtime = t
 
     when defined(windows):
-      proc timeToFileTime(t: Time): FILETIME =
-        var ft: FILETIME
-        let ll = int64(t.toUnix()) * 10000000 + 116444736000000000
-        ft.dwLowDateTime  = int32(ll and 0xFFFFFFFF'i64)
-        ft.dwHighDateTime = int32((ll shr 32) and 0xFFFFFFFF'i64)
-        return ft
-      let ftAccess = timeToFileTime(atime)
-      let ftModify = timeToFileTime(mtime)
+      let ftAccess = timeToFileTimeUTC(atime)
+      let ftModify = timeToFileTimeUTC(mtime)
       
 
-      #let h = createFileW(path, GENERIC_WRITE or GENERIC_READ,
+      #let h = CreateFileW(path, GENERIC_WRITE or GENERIC_READ,
                           #FILE_SHARE_READ or FILE_SHARE_WRITE,
                           #nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nil)
       
       
 
 
-      let widePath: WideCString =toWideCString(newWideCString(path))  # string -> WideCString
+      #let widePath: WideCString =toWideCString(newWideCString(path))  # string -> WideCString
 
-      let h = createFileW(
-        widePath,
+      let h = CreateFileW(
+        path,
         GENERIC_WRITE or GENERIC_READ,   # DWORD
         FILE_SHARE_READ or FILE_SHARE_WRITE,  # DWORD
         nil,                             # lpSecurityAttributes
         OPEN_EXISTING,                   # DWORD
         FILE_ATTRIBUTE_NORMAL,           # DWORD
-        cast[Handle](nil)                              # hTemplateFile
+        nil                              # hTemplateFile
       )
 
 
-
+      let ft = timeToFileTimeUTC(mtime)
 
       if h == INVALID_HANDLE_VALUE:
         raise newException(OSError, "Failed to open file: " & path)
-      if setFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
-        raise newException(OSError, "Failed to set file time: " & path)
-      discard closeHandle(h)
+      #if SetFileTime(h, addr ftAccess, addr ftModify, addr ftModify) == 0:
+      if SetFileTime(h, nil, addr ft, addr ft) == 0:
+      #if SetFileTime(h, nil, addr ftAccess, addr ftModify) == 0:
+        #raise newException(OSError, "Failed to set file time: " & path)
+        echo "SetFileTime failed, GetLastError=", GetLastError()
+        discard CloseHandle(h)
+        return
+      discard CloseHandle(h)
     else:
       var tv: array[2, timespec]
       tv[0] = timespec(sec = atime.toUnix(), nsec = 0)
