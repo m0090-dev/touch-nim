@@ -232,7 +232,7 @@ proc climain(
     # ファイル存在チェック
     if not fileExists(f):
       if no_create:
-        echo "スキップ: ファイルが存在しません -> ", f
+        #echo "スキップ: ファイルが存在しません -> ", f
         continue
       else:
         discard open(f, fmWrite)  # 空ファイル作成
@@ -249,4 +249,4 @@ if isMainModule:
     echo "Try 'touch --help' for more information."
 
   clCfg.version = VERSION
-  dispatch climain
+  dispatch(climain,short = {"no_create":'c'})
