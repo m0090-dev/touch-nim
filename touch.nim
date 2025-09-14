@@ -249,4 +249,4 @@ if isMainModule:
     echo "Try 'touch --help' for more information."
 
   clCfg.version = VERSION
-  dispatch(climain,short = {"no_create":'c'})
+  dispatch(climain,cmdName = "touch",short = {"no_create":'c'})
