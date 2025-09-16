@@ -9,6 +9,9 @@ build/*
 
 # test用
 test/*
+
+# test.pyのみ保持
+!test/test.py
 # 空ディレクトリ保持用
 !build/.gitkeep
 !test/.gitkeep
