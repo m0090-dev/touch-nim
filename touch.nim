@@ -190,6 +190,59 @@ import os
 import version
 
 
+#proc climain(
+  #access: bool = false,
+  #modify: bool = false,
+  #no_create: bool = false,
+  #date: string = "",
+  #timestamp: string = "",
+  #reference: string = "",
+  #file: seq[string]
+#) =
+  #when defined(release): discard
+  #else:
+    #echo "== DEBUG TEXT =="
+    #echo "access=",access
+    #echo "modify=",modify
+    #echo "no_create=",no_create
+    #echo "date=",date
+    #echo "timestamp=",timestamp
+    #echo "reference=",reference
+    #echo "file=",file
+    #echo "== END TEXT =="
+  #for f in file:
+    #var mode: FileTimeUpdateMode = {}
+
+    # フラグ設定
+    #if access: mode.incl(AccessTime)
+    #if modify: mode.incl(ModifyTime)
+    #if reference != "": mode.incl(UseReference)
+    #if date != "": mode.incl(UseDateStr)
+    #if timestamp != "": mode.incl(UseTimestamp)
+
+    # -t がある場合、-a/-m が指定されなければ両方更新
+    #if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
+      #mode.incl(AccessTime)
+      #mode.incl(ModifyTime)
+
+    # それ以外のデフォルト（何も指定されていない場合）
+    #if mode == {}:
+      #mode = {AccessTime, ModifyTime}
+
+    # ファイル存在チェック
+    #if not fileExists(f):
+      #if no_create:
+        #echo "スキップ: ファイルが存在しません -> ", f
+        #continue
+      #else:
+        #discard open(f, fmWrite)  # 空ファイル作成
+
+    # touch 実行
+    #try:
+      #touch(f, mode, dateStr = date, timestampStr = timestamp, refPath = reference)
+    #except OSError as e:
+      #echo "ファイル更新失敗: ", f, " -> ", e.msg
+
 proc climain(
   access: bool = false,
   modify: bool = false,
@@ -198,50 +251,9 @@ proc climain(
   timestamp: string = "",
   reference: string = "",
   file: seq[string]
-) =
-  when defined(release): discard
-  else:
-    echo "== DEBUG TEXT =="
-    echo "access=",access
-    echo "modify=",modify
-    echo "no_create=",no_create
-    echo "date=",date
-    echo "timestamp=",timestamp
-    echo "reference=",reference
-    echo "file=",file
-    echo "== END TEXT =="
-  for f in file:
-    var mode: FileTimeUpdateMode = {}
+) = 
+  touch(access,modify,no_create,date,timestamp,reference,file)
 
-    # フラグ設定
-    if access: mode.incl(AccessTime)
-    if modify: mode.incl(ModifyTime)
-    if reference != "": mode.incl(UseReference)
-    if date != "": mode.incl(UseDateStr)
-    if timestamp != "": mode.incl(UseTimestamp)
-
-    # -t がある場合、-a/-m が指定されなければ両方更新
-    if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
-      mode.incl(AccessTime)
-      mode.incl(ModifyTime)
-
-    # それ以外のデフォルト（何も指定されていない場合）
-    if mode == {}:
-      mode = {AccessTime, ModifyTime}
-
-    # ファイル存在チェック
-    if not fileExists(f):
-      if no_create:
-        #echo "スキップ: ファイルが存在しません -> ", f
-        continue
-      else:
-        discard open(f, fmWrite)  # 空ファイル作成
-
-    # touch 実行
-    try:
-      touch(f, mode, dateStr = date, timestampStr = timestamp, refPath = reference)
-    except OSError as e:
-      echo "ファイル更新失敗: ", f, " -> ", e.msg
 
 if isMainModule:
   if paramCount() < 1:
