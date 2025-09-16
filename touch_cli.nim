@@ -185,7 +185,7 @@
 
 import cligen
 import options
-import utils
+import core
 import os
 import version
 
