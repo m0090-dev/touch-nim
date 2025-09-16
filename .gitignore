@@ -12,6 +12,8 @@ test/*
 
 # test.pyのみ保持
 !test/test.py
+# core.defのみ保持
+!build/core.def
 # 空ディレクトリ保持用
 !build/.gitkeep
 !test/.gitkeep

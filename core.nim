@@ -180,52 +180,69 @@ proc touch*(
     except OSError as e:
       echo "ファイル更新失敗: ", f, " -> ", e.msg
 
-proc ctouch*(access: cint,
-             modify: cint,
-             no_create: cint,
-             date: cstring,
-             timestamp: cstring,
-             reference: cstring,
-             files: cstringArray) {.cdecl, exportc, dynlib.} =
-  var i = 0
-  while files[i] != nil:
+#proc ctouch*(access: cint,
+             #modify: cint,
+             #no_create: cint,
+             #date: cstring,
+             #timestamp: cstring,
+             #reference: cstring,
+             #files: cstringArray) {.cdecl, exportc, dynlib.} =
+  #var i = 0
+  #while files[i] != nil:
     #let f = files[i].cstring
-    let f = $files[i]
-    var mode: FileTimeUpdateMode = {}
+    #let f = $files[i]
+    #var mode: FileTimeUpdateMode = {}
 
     # フラグ設定
-    if access != 0: mode.incl(AccessTime)
-    if modify != 0: mode.incl(ModifyTime)
-    if reference != "": mode.incl(UseReference)
-    if date != "": mode.incl(UseDateStr)
-    if timestamp != "": mode.incl(UseTimestamp)
+    #if access != 0: mode.incl(AccessTime)
+    #if modify != 0: mode.incl(ModifyTime)
+    #if reference != "": mode.incl(UseReference)
+    #if date != "": mode.incl(UseDateStr)
+    #if timestamp != "": mode.incl(UseTimestamp)
 
     # -t がある場合、-a/-m が指定されなければ両方更新
-    if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
-      mode.incl(AccessTime)
-      mode.incl(ModifyTime)
+    #if UseTimestamp in mode and not (AccessTime in mode or ModifyTime in mode):
+      #mode.incl(AccessTime)
+      #mode.incl(ModifyTime)
 
     # それ以外のデフォルト
-    if mode == {}:
-      mode = {AccessTime, ModifyTime}
+    #if mode == {}:
+      #mode = {AccessTime, ModifyTime}
 
     # ファイル存在チェック
-    if not fileExists(f):
-      if no_create != 0:
-        i.inc()
-        continue
-      else:
-        discard open(f, fmWrite)  # 空ファイル作成
+    #if not fileExists(f):
+      #if no_create != 0:
+        #i.inc()
+        #continue
+      #else:
+        #discard open(f, fmWrite)  # 空ファイル作成
 
-    try:
+    #try:
 
-      updateFileTime(f, mode,
-        dateStr = if date != nil: $date else: "",
-        timestampStr = if timestamp != nil: $timestamp else: "",
-        refPath = if reference != nil: $reference else: ""
-      )
+      #updateFileTime(f, mode,
+        #dateStr = if date != nil: $date else: "",
+        #timestampStr = if timestamp != nil: $timestamp else: "",
+        #refPath = if reference != nil: $reference else: ""
+      #)
       #updateFileTime(f, mode, dateStr = date, timestampStr = timestamp, refPath = reference)
-    except OSError as e:
-      stderr.write("ファイル更新失敗: " & f & " -> " & e.msg & "\n")
+    #except OSError as e:
+      #stderr.write("ファイル更新失敗: " & f & " -> " & e.msg & "\n")
     
-    i.inc()
+    #i.inc()
+
+
+
+proc ctouch*(access: cint, modify: cint, no_create: cint,
+             date, timestamp, reference: cstring,
+             files: cstringArray) {.cdecl, exportc, dynlib.} =
+  var seqFiles: seq[string] = @[]
+  var i = 0
+  while files[i] != nil:
+    seqFiles.add($files[i])
+    inc i
+
+  touch(access != 0, modify != 0, no_create != 0,
+        if date != nil: $date else: "",
+        if timestamp != nil: $timestamp else: "",
+        if reference != nil: $reference else: "",
+        seqFiles)
